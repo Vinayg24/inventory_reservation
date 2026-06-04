@@ -1,33 +1,12 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ProductCard } from "@/components/ProductCard";
-import type { ApiErrorResponse, ProductWithInventory } from "@/lib/types";
+import { getProductsWithInventory } from "@/lib/products";
 
 export const dynamic = "force-dynamic";
 
-function getBaseUrl(): string {
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-
-  return "http://localhost:3000";
-}
-
-async function getProducts(): Promise<ProductWithInventory[]> {
-  const response = await fetch(`${getBaseUrl()}/api/products`, {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const errorData = (await response.json()) as ApiErrorResponse;
-    throw new Error(errorData.error ?? "Failed to load products");
-  }
-
-  return response.json() as Promise<ProductWithInventory[]>;
-}
-
 export default async function HomePage() {
   try {
-    const products = await getProducts();
+    const products = await getProductsWithInventory();
 
     return (
       <main className="min-h-screen bg-background">
