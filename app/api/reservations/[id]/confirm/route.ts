@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { prisma } from "@/lib/prisma";
+import { expireIfNeeded } from "@/lib/expireReservation";
 import {
   getCachedIdempotentResponse,
   saveIdempotentResponse,
 } from "@/lib/idempotency";
+import { prisma } from "@/lib/prisma";
 import { ReservationIdSchema } from "@/lib/schemas";
 import type { ApiErrorResponse, ReservationWithRelations } from "@/lib/types";
 
@@ -33,6 +34,8 @@ export async function POST(
       throw error;
     }
 
+    await expireIfNeeded(params.id);
+
     const idempotencyKey = request.headers.get("Idempotency-Key");
     const cachedResponse = await getCachedIdempotentResponse(idempotencyKey);
     if (cachedResponse) {
@@ -57,37 +60,19 @@ export async function POST(
     }
 
     if (reservation.status !== "PENDING") {
+      if (
+        reservation.status === "RELEASED" &&
+        reservation.expiresAt < new Date()
+      ) {
+        return NextResponse.json(
+          { error: "Reservation has expired" },
+          { status: 410 }
+        );
+      }
+
       return NextResponse.json(
         { error: "Reservation is not pending" },
         { status: 400 }
-      );
-    }
-
-    if (reservation.expiresAt < new Date()) {
-      await prisma.$transaction(async (tx) => {
-        await tx.inventory.update({
-          where: {
-            productId_warehouseId: {
-              productId: reservation.productId,
-              warehouseId: reservation.warehouseId,
-            },
-          },
-          data: {
-            reservedUnits: {
-              decrement: reservation.quantity,
-            },
-          },
-        });
-
-        await tx.reservation.update({
-          where: { id: reservation.id },
-          data: { status: "RELEASED" },
-        });
-      });
-
-      return NextResponse.json(
-        { error: "Reservation has expired" },
-        { status: 410 }
       );
     }
 

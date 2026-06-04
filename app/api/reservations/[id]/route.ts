@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { expireIfNeeded } from "@/lib/expireReservation";
 import { prisma } from "@/lib/prisma";
 import { ReservationIdSchema } from "@/lib/schemas";
 import type { ApiErrorResponse, ReservationWithRelations } from "@/lib/types";
@@ -28,6 +29,8 @@ export async function GET(
       }
       throw error;
     }
+
+    await expireIfNeeded(params.id);
 
     const reservation = await prisma.reservation.findUnique({
       where: { id: params.id },

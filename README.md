@@ -10,11 +10,19 @@ A Next.js 14 inventory reservation system with Redis distributed locking, Prisma
 - `npx prisma db seed`
 - `npm run dev`
 
-## Expiry mechanism
+## Expiry mechanism (Vercel Hobby Plan — free)
 
-Vercel Cron Job runs `/api/cron/expire-reservations` every minute in production. It finds all `PENDING` reservations where `expiresAt < now` and releases them in transactions (updates status to `RELEASED` and decrements `reservedUnits` on the matching inventory row).
+Three-layer hybrid approach:
 
-The `/confirm` endpoint also performs a lazy expiry check as a safety net for the gap between cron runs. If a user attempts to confirm an expired reservation, the API releases the stock and returns `410 Gone`.
+1. **Lazy expiry**: every read of a reservation checks and expires it on the spot.
+   Zero lag — a reservation is expired the moment it is next touched.
+
+2. **Middleware passive sweep**: fires a background cleanup on every API request,
+   throttled to once per 60 seconds via a Redis TTL key. Ensures bulk expiry
+   even for reservations nobody is actively viewing.
+
+3. **Daily Vercel Cron (2am UTC)**: full sweep safety net for any reservations
+   that slipped through (e.g. no API traffic overnight).
 
 ## Concurrency approach
 

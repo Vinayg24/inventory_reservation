@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { expireIfNeeded } from "@/lib/expireReservation";
 import { prisma } from "@/lib/prisma";
 import type { ApiErrorResponse } from "@/lib/types";
 
@@ -19,39 +20,23 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const expired = await prisma.reservation.findMany({
+    const expiredReservations = await prisma.reservation.findMany({
       where: {
         status: "PENDING",
         expiresAt: {
           lt: new Date(),
         },
       },
+      select: {
+        id: true,
+      },
     });
 
-    for (const reservation of expired) {
-      await prisma.$transaction(async (tx) => {
-        await tx.reservation.update({
-          where: { id: reservation.id },
-          data: { status: "RELEASED" },
-        });
-
-        await tx.inventory.update({
-          where: {
-            productId_warehouseId: {
-              productId: reservation.productId,
-              warehouseId: reservation.warehouseId,
-            },
-          },
-          data: {
-            reservedUnits: {
-              decrement: reservation.quantity,
-            },
-          },
-        });
-      });
+    for (const reservation of expiredReservations) {
+      await expireIfNeeded(reservation.id);
     }
 
-    return NextResponse.json({ expired: expired.length });
+    return NextResponse.json({ expired: expiredReservations.length });
   } catch (error) {
     console.error("GET /api/cron/expire-reservations failed:", error);
     return NextResponse.json(
